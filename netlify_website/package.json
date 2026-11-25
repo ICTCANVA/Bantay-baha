@@ -1,8 +1,0 @@
-{
-  "name": "bantay-baha-dashboard",
-  "version": "1.0.0",
-  "description": "Bantay Baha Hybrid 4G + SMS Flood Warning Dashboard",
-  "dependencies": {
-    "@netlify/blobs": "^8.1.0"
-  }
-}
