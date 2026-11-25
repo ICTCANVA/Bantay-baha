@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bantay Baha | Live Flood Telemetry Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --safe: #10b981;
+      --warning: #f59e0b;
+      --critical: #ef4444;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      padding: 20px; display: flex; justify-content: center;
+    }
+    .container { width: 100%; max-width: 920px; }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--border);
+      padding-bottom: 16px; margin-bottom: 20px;
+    }
+    h1 { margin: 0; font-size: 1.5rem; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+    .badge {
+      padding: 6px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700;
+      background: #1e293b; border: 1px solid var(--border);
+    }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px; margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px;
+    }
+    .label { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .value { font-size: 2.6rem; font-weight: 800; margin: 8px 0; }
+    .tier-SAFE { color: var(--safe); }
+    .tier-WARNING { color: var(--warning); }
+    .tier-CRITICAL { color: var(--critical); }
+    .bg-SAFE { background: rgba(16, 185, 129, 0.14); border-color: var(--safe); }
+    .bg-WARNING { background: rgba(245, 158, 11, 0.15); border-color: var(--warning); }
+    .bg-CRITICAL { background: rgba(239, 68, 68, 0.2); border-color: var(--critical); }
+    .thresholds {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 0.8rem;
+    }
+    .t-pill { padding: 4px 10px; border-radius: 6px; background: #0f172a; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; }
+    .sim-box { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
+    input, button {
+      padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: #0f172a; color: var(--text); font-size: 0.9rem;
+    }
+    button { background: #2563eb; border: none; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Bantay Baha — Hybrid Flood Warning Dashboard</h1>
+        <div class="subtitle">100% Cellular Telemetry (SIMCom A7670C 4G Packet Data + GSM SMS Dual-Path Alerts)</div>
+      </div>
+      <div class="badge" id="sourceBadge">Status: Waiting for SIM data...</div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Current Water Level</div>
+        <div class="value" id="waterVal">-- cm</div>
+        <div class="subtitle" id="lastUpdated">Last update: Never</div>
+      </div>
+
+      <div class="card" id="tierCard">
+        <div class="label">MDRRMO Three-Tier Alert Status</div>
+        <div class="value" id="tierVal">SAFE</div>
+        <div class="thresholds">
+          <span class="t-pill">Safe: 10.0 cm (&lt; 15.0 cm)</span>
+          <span class="t-pill">Warning: 15.0 cm</span>
+          <span class="t-pill">Critical: &ge; 20.0 cm</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Recent Cellular Telemetry Log (Last 30 Readings)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp (Local)</th>
+            <th>Water Level (cm)</th>
+            <th>MDRRMO Tier</th>
+            <th>Telemetry Path</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="4" style="color:#94a3b8;">Waiting for incoming 4G SIM data...</td></tr>
+        </tbody>
+      </table>
+
+      <div class="sim-box">
+        <input type="number" step="0.1" id="testCmInput" style="width:180px;" placeholder="Test cm (e.g. 15.2)" />
+        <button onclick="sendTestReading()">Send Test Reading</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/.netlify/functions/ingest";
+
+    async function fetchTelemetry() {
+      try {
+        const res = await fetch(API_URL);
+        const data = await res.json();
+
+        const water = data.water_cm !== undefined ? Number(data.water_cm).toFixed(2) : "0.00";
+        const tier = data.tier || "SAFE";
+        const source = data.source || "WAITING";
+
+        document.getElementById("waterVal").textContent = `${water} cm`;
+        const tierEl = document.getElementById("tierVal");
+        tierEl.textContent = tier;
+        tierEl.className = `value tier-${tier}`;
+
+        document.getElementById("tierCard").className = `card bg-${tier}`;
+
+        document.getElementById("sourceBadge").textContent =
+          source === "4G_DATA" ? "Connected: 4G SIM Data" :
+          source === "SMS_GATEWAY" ? "Connected: GSM SMS Fallback" : "Status: Standby";
+
+        document.getElementById("lastUpdated").textContent = data.updated_at
+          ? `Last update: ${new Date(data.updated_at).toLocaleString()}`
+          : "Last update: Waiting for prototype...";
+
+        const tbody = document.getElementById("historyBody");
+        if (Array.isArray(data.history) && data.history.length > 0) {
+          tbody.innerHTML = data.history.map(item => `
+            <tr>
+              <td>${new Date(item.updated_at).toLocaleString()}</td>
+              <td><strong>${Number(item.water_cm).toFixed(2)} cm</strong></td>
+              <td class="tier-${item.tier}"><strong>${item.tier}</strong></td>
+              <td>${item.source === "SMS_GATEWAY" ? "GSM SMS Fallback" : "4G SIM Packet Data"}</td>
+            </tr>
+          `).join("");
+        }
+      } catch (err) {
+        console.error("Failed to fetch telemetry:", err);
+      }
+    }
+
+    async function sendTestReading() {
+      const val = parseFloat(document.getElementById("testCmInput").value) || 15.2;
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ water_cm: val, source: "4G_DATA" })
+      });
+      fetchTelemetry();
+    }
+
+    fetchTelemetry();
+    setInterval(fetchTelemetry, 4000);
+  </script>
+</body>
+</html>
